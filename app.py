@@ -11,15 +11,12 @@ BASE_DIR = os.environ.get(
     "RENDER_DISK_PATH",
     os.path.abspath(os.path.dirname(__file__))
 )
-os.makedirs(BASE_DIR, exist_ok=True)
 DB_FILE = os.path.join(BASE_DIR, "shop.db")
 
 
 def init_db():
-    if not os.path.exists(DB_FILE):
-        open(DB_FILE, 'w').close()
-
-    conn = sqlite3.connect(DB_FILE, timeout=10)
+    os.makedirs(BASE_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
@@ -77,7 +74,7 @@ def init_db():
 
 def get_db():
     init_db()
-    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn = sqlite3.connect(DB_FILE, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
