@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 import sqlite3
 from flask import Flask, render_template_string, request, jsonify, send_from_directory
 
@@ -9,13 +10,16 @@ DB_FILE = "shop.db"
 
 
 def get_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
 def init_db():
+    if not os.path.exists(DB_FILE):
+        open(DB_FILE, 'w').close()
+        
     conn = get_db()
     cursor = conn.cursor()
 
@@ -70,7 +74,6 @@ def init_db():
     conn.close()
 
 
-# Force immediate database creation on cloud server startup (Render/Gunicorn)
 with app.app_context():
     init_db()
 
