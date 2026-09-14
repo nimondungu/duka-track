@@ -6,7 +6,10 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 
 app = Flask(__name__)
 app.secret_key = "duka_pos_enterprise_key"
-DB_FILE = "shop.db"
+
+# Ensure absolute path so Render's container finds and writes shop.db reliably
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DB_FILE = os.path.join(BASE_DIR, "shop.db")
 
 
 def get_db():
