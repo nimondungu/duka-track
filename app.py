@@ -7,14 +7,6 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 app = Flask(__name__)
 app.secret_key = "duka_pos_enterprise_key"
 
-# --- RENDER-READY STORAGE PATH ---
-# On Render, the default filesystem is EPHEMERAL: anything written to it is
-# wiped on every redeploy or restart. To keep sales data across deploys,
-# attach a Render "Persistent Disk" to this service (Settings -> Disks),
-# mount it at e.g. /data, and set an environment variable:
-#     RENDER_DISK_PATH = /data
-# Locally (no env var set), this falls back to the folder next to app.py,
-# so nothing changes for local development.
 BASE_DIR = os.environ.get(
     "RENDER_DISK_PATH",
     os.path.abspath(os.path.dirname(__file__))
@@ -84,20 +76,10 @@ def init_db():
 
 
 def get_db():
+    init_db()
     conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
-
-    # Auto-initialize tables and view if they don't exist yet on the server
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='items';")
-    if not cursor.fetchone():
-        conn.close()
-        init_db()
-        conn = sqlite3.connect(DB_FILE, timeout=10)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-
     return conn
 
 
@@ -1213,6 +1195,7 @@ def service_worker():
 
 @app.route("/")
 def index():
+    init_db()
     conn = get_db()
     cursor = conn.cursor()
 
@@ -1239,6 +1222,7 @@ def index():
 
 @app.route("/api/sale", methods=["POST"])
 def api_sale():
+    init_db()
     data = request.get_json() or {}
     item_id = int(data.get("item_id", 0))
     qty = int(data.get("quantity", 1))
@@ -1288,6 +1272,7 @@ def api_sale():
 
 @app.route("/api/sale/split", methods=["POST"])
 def api_sale_split():
+    init_db()
     data = request.get_json() or {}
     item_id = int(data.get("item_id", 0))
     qty = int(data.get("quantity", 1))
@@ -1346,6 +1331,7 @@ def api_sale_split():
 
 @app.route("/api/sale/reverse", methods=["POST"])
 def api_sale_reverse():
+    init_db()
     data = request.get_json() or {}
     item_id = int(data.get("item_id", 0))
     qty = int(data.get("quantity", 1))
@@ -1394,6 +1380,7 @@ def api_sale_reverse():
 
 @app.route("/api/restock", methods=["POST"])
 def api_restock():
+    init_db()
     data = request.get_json() or {}
     item_id = int(data.get("item_id", 0))
     qty = int(data.get("quantity", 0))
@@ -1440,6 +1427,7 @@ def api_restock():
 
 @app.route("/api/items/add", methods=["POST"])
 def add_new_item():
+    init_db()
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
     try:
@@ -1485,6 +1473,7 @@ def add_new_item():
 
 @app.route("/api/items/archive/<int:item_id>", methods=["POST"])
 def archive_product(item_id):
+    init_db()
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE items SET is_active = 0 WHERE item_id = ?", (item_id,))
@@ -1495,10 +1484,11 @@ def archive_product(item_id):
 
 @app.route("/api/items/import-csv", methods=["POST"])
 def import_csv_catalog():
+    init_db()
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
     file = request.files["file"]
-
+    
     stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
     reader = csv.DictReader(stream)
 
@@ -1537,6 +1527,7 @@ def import_csv_catalog():
 
 @app.route("/api/stocktake/reset-all-zero", methods=["POST"])
 def reset_all_zero():
+    init_db()
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT item_id, current_stock, unit_price FROM view_current_stock WHERE current_stock != 0;")
@@ -1556,6 +1547,7 @@ def reset_all_zero():
 
 @app.route("/api/stocktake/update-count", methods=["POST"])
 def update_stock_count():
+    init_db()
     data = request.get_json() or {}
     item_id = int(data.get("item_id", 0))
     counted_qty = int(data.get("counted_quantity", 0))
@@ -1583,6 +1575,7 @@ def update_stock_count():
 
 @app.route("/api/admin/clear-all-transactions", methods=["POST"])
 def clear_all_transactions():
+    init_db()
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM transactions;")
@@ -1593,6 +1586,7 @@ def clear_all_transactions():
 
 @app.route("/api/reports", methods=["GET"])
 def get_reports():
+    init_db()
     range_type = request.args.get("range", "today")
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
@@ -1675,6 +1669,4 @@ def get_reports():
 
 
 if __name__ == "__main__":
-    # Local development only. On Render, this block is never executed —
-    # the Start Command (gunicorn app:app --bind 0.0.0.0:$PORT) runs instead.
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
