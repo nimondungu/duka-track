@@ -1,0 +1,111 @@
+import sqlite3
+import pandas as pd
+
+DB_FILE = "shop.db"
+EXCEL_FILE = "Shop Stock Flow.xlsx"
+
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON;")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS items (
+            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            unit_price REAL NOT NULL DEFAULT 0.0,
+            reorder_level INTEGER NOT NULL DEFAULT 5
+        );
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            movement_type TEXT NOT NULL CHECK(movement_type IN ('IN', 'OUT')),
+            payment_method TEXT CHECK(payment_method IN ('CASH', 'MPESA', 'N/A')),
+            quantity INTEGER NOT NULL CHECK(quantity > 0),
+            unit_price REAL NOT NULL DEFAULT 0.0,
+            total_amount REAL NOT NULL DEFAULT 0.0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
+        );
+    """)
+
+    cursor.execute("""
+        CREATE VIEW IF NOT EXISTS view_current_stock AS
+        SELECT 
+            i.item_id,
+            i.name,
+            i.unit_price,
+            i.reorder_level,
+            COALESCE(SUM(
+                CASE 
+                    WHEN t.movement_type = 'IN' THEN t.quantity
+                    WHEN t.movement_type = 'OUT' THEN -t.quantity
+                    ELSE 0 
+                END
+            ), 0) AS current_stock
+        FROM items i
+        LEFT JOIN transactions t ON i.item_id = t.item_id
+        GROUP BY i.item_id;
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def migrate_data():
+    init_db()
+    df = pd.read_excel(EXCEL_FILE, sheet_name=" May - Jul 2026", header=None)
+
+    # Extract Product, Quantity, and Selling Amount rows
+    items_raw = df.iloc[2:, [0, 1, 2]].copy()
+    items_raw.columns = ["name", "initial_qty", "price"]
+    items_raw = items_raw.dropna(subset=["name"])
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    seen_names = {}
+    imported_count = 0
+
+    for _, row in items_raw.iterrows():
+        raw_name = str(row["name"]).strip()
+        price = float(row["price"]) if pd.notnull(row["price"]) else 0.0
+        qty = int(row["initial_qty"]) if pd.notnull(row["initial_qty"]) and row["initial_qty"] > 0 else 0
+
+        # Handle duplicated items (like Patco 2.5 vs 10)
+        if raw_name in seen_names:
+            clean_name = f"{raw_name} ({price}/=)"
+        else:
+            seen_names[raw_name] = True
+            clean_name = raw_name
+
+        cursor.execute("""
+            INSERT OR IGNORE INTO items (name, unit_price, reorder_level)
+            VALUES (?, ?, 5)
+        """, (clean_name, price))
+
+        item_id = cursor.lastrowid
+        if not item_id:
+            cursor.execute("SELECT item_id FROM items WHERE name = ?", (clean_name,))
+            item_id = cursor.fetchone()[0]
+
+        # Log opening stock
+        if qty > 0:
+            cursor.execute("""
+                INSERT INTO transactions (item_id, movement_type, payment_method, quantity, unit_price, total_amount)
+                VALUES (?, 'IN', 'N/A', ?, ?, ?)
+            """, (item_id, qty, price, qty * price))
+
+        imported_count += 1
+
+    conn.commit()
+    conn.close()
+    print(f"Successfully migrated {imported_count} products and initial stock into {DB_FILE}.")
+
+
+if __name__ == "__main__":
+    migrate_data()
