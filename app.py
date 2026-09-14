@@ -70,6 +70,11 @@ def init_db():
     conn.close()
 
 
+# Force immediate database creation on cloud server startup (Render/Gunicorn)
+with app.app_context():
+    init_db()
+
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en" class="dark">
@@ -79,9 +84,9 @@ HTML_TEMPLATE = """
     <title>Duka Track POS</title>
 
     <link rel="manifest" href="/manifest.json">
-    <link rel="icon" href="/static/icon-192.png" type="image/png">
-    <link rel="apple-touch-icon" href="/static/icon-192.png">
-    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" href="/static/app_icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/static/app_icon.svg">
+    <meta name="theme-color" content="#10b981">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -110,9 +115,7 @@ HTML_TEMPLATE = """
     <nav class="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800/80 px-4 py-3">
         <div class="max-w-3xl mx-auto flex items-center justify-between">
             <div class="flex items-center gap-2.5">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-md">
-                    <svg class="w-5 h-5 text-slate-950 font-black" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
-                </div>
+                <img src="/static/app_icon.svg" alt="Logo" class="w-9 h-9 rounded-xl shadow-md">
                 <div>
                     <h1 class="text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">Duka Track</h1>
                     <span id="connStatus" class="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 tracking-wide flex items-center gap-1 mt-0.5">
@@ -123,7 +126,6 @@ HTML_TEMPLATE = """
 
             <!-- Top Action Group -->
             <div class="flex items-center gap-1.5 sm:gap-2">
-                <!-- Native Install Button -->
                 <button id="directInstallBtn" onclick="triggerNativeInstall()" class="hidden bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 text-xs font-black px-3 py-1.5 rounded-xl shadow-md active:scale-95 transition flex items-center gap-1">
                     <span>📲</span> Install
                 </button>
@@ -1643,7 +1645,4 @@ def get_reports():
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, host="0.0.0.0", port=5000)
-else:
-    init_db()
