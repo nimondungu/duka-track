@@ -7,23 +7,29 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 app = Flask(__name__)
 app.secret_key = "duka_pos_enterprise_key"
 
-# Ensure absolute path so Render's container finds and writes shop.db reliably
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# --- RENDER-READY STORAGE PATH ---
+# On Render, the default filesystem is EPHEMERAL: anything written to it is
+# wiped on every redeploy or restart. To keep sales data across deploys,
+# attach a Render "Persistent Disk" to this service (Settings -> Disks),
+# mount it at e.g. /data, and set an environment variable:
+#     RENDER_DISK_PATH = /data
+# Locally (no env var set), this falls back to the folder next to app.py,
+# so nothing changes for local development.
+BASE_DIR = os.environ.get(
+    "RENDER_DISK_PATH",
+    os.path.abspath(os.path.dirname(__file__))
+)
+os.makedirs(BASE_DIR, exist_ok=True)
 DB_FILE = os.path.join(BASE_DIR, "shop.db")
-
-
-def get_db():
-    conn = sqlite3.connect(DB_FILE, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
 
 
 def init_db():
     if not os.path.exists(DB_FILE):
         open(DB_FILE, 'w').close()
-        
-    conn = get_db()
+
+    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -75,6 +81,24 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def get_db():
+    conn = sqlite3.connect(DB_FILE, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+
+    # Auto-initialize tables and view if they don't exist yet on the server
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='items';")
+    if not cursor.fetchone():
+        conn.close()
+        init_db()
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+
+    return conn
 
 
 with app.app_context():
@@ -1474,7 +1498,7 @@ def import_csv_catalog():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
     file = request.files["file"]
-    
+
     stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
     reader = csv.DictReader(stream)
 
@@ -1651,4 +1675,6 @@ def get_reports():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # Local development only. On Render, this block is never executed —
+    # the Start Command (gunicorn app:app --bind 0.0.0.0:$PORT) runs instead.
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
